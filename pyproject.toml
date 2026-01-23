@@ -1,0 +1,91 @@
+[project]
+name = "twist2"
+version = "1.0.0"
+description = "TWIST2: Scalable, Portable, and Holistic Humanoid Data Collection System"
+authors = [
+    {name = "Yanjie Ze", email = "yanjieze@stanford.edu"}
+]
+readme = "README.md"
+requires-python = ">=3.8,<3.9"
+license = {text = "BSD-3-Clause"}
+
+dependencies = [
+    # Core dependencies
+    "torch>=1.4.0",
+    "torchvision>=0.5.0",
+    "numpy==1.23.0",
+
+    # IsaacGym and RL dependencies
+    "isaacgym-stubs",
+    "matplotlib",
+
+    # Motion and retargeting
+    "pymeshlab",
+    "pydelatin",
+    "pyfqmr",
+    "pytorch-kinematics",
+
+    # Utilities
+    "wandb",
+    "tqdm",
+    "opencv-python",
+    "ipdb",
+    "rich",
+    "termcolor",
+
+    # Web and communication
+    "flask",
+    "zmq",
+    "redis[hiredis]",
+
+    # Data handling
+    "dill",
+    "gdown",
+    "hydra-core",
+    "imageio[ffmpeg]",
+
+    # Simulation and visualization
+    "mujoco",
+    "mujoco-python-viewer",
+
+    # Voice control
+    "pyttsx3",
+
+    # ONNX for model inference
+    "onnx",
+    "onnxruntime-gpu",
+
+    # GUI
+    "customtkinter",
+
+    # Monitoring
+    "tensorboard",
+    "setuptools==59.5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "black",
+    "isort",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = []
+
+[tool.uv.sources]
+# Local packages as editable installs
+rsl-rl = { path = "rsl_rl", editable = true }
+legged-gym = { path = "legged_gym", editable = true }
+pose = { path = "pose", editable = true }
+
+# IsaacGym needs to be installed separately from the downloaded package
+# This is just a placeholder - users must install it manually
+# isaacgym = { path = "../isaacgym/python", editable = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["rsl_rl", "legged_gym", "pose"]

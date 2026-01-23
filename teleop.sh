@@ -1,0 +1,21 @@
+# sudo ufw disable
+
+source /home/ubuntu/Desktop/VP/GMR/.venv/bin/activate
+
+cd deploy_real
+
+# this is my unitree g1's ip in wifi
+# redis_ip="192.168.110.24"
+# localhost if you are using laptop to verify sim2sim or sim2real
+redis_ip="localhost"
+
+# the height (empirically) should be smaller than the actual human height, due to inaccuracy of the PICO estimation.
+actual_human_height=1.6
+python xrobot_teleop_to_robot_w_hand.py --robot unitree_g1 \
+             --actual_human_height $actual_human_height \
+             --redis_ip $redis_ip \
+             --target_fps 60 \
+             --measure_fps 1 \
+             --smooth \
+             --smooth_window_size 5
+            #  --pinch_mode
