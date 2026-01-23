@@ -297,8 +297,9 @@ class G1MimicCfg(HumanoidMimicCfg):
         key_bodies = ["left_rubber_hand", "right_rubber_hand", "left_ankle_roll_link", "right_ankle_roll_link", "left_knee_link", "right_knee_link", "left_elbow_link", "right_elbow_link", "head_mocap"]
         
         # motion_file = f"{LEGGED_GYM_ROOT_DIR}/motion_data_configs/g1_lafan1.yaml"
+        # motion_file = f"../../../../motion_data/LAFAN1_g1_gmr/dance1_subject2.pkl"
 
-        motion_file = f"../../../../motion_data/LAFAN1_g1_gmr/dance1_subject2.pkl"
+        motion_file = f"{LEGGED_GYM_ROOT_DIR}/motion_data_configs/virtuals_dataset.yaml"
 
         reset_consec_frames = 30
 

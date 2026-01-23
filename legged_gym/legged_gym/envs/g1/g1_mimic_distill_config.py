@@ -334,7 +334,7 @@ class G1MimicPrivCfg(HumanoidMimicCfg):
         motion_smooth = True
         motion_decompose = False
 
-        motion_file = f"{LEGGED_GYM_ROOT_DIR}/motion_data_configs/twist2_dataset_local.yaml"
+        motion_file = f"{LEGGED_GYM_ROOT_DIR}/motion_data_configs/virtuals_dataset.yaml"
         
 
 

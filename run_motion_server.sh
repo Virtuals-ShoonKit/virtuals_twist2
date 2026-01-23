@@ -1,7 +1,10 @@
 #!/bin/bash
-source /home/ubuntu/Desktop/VP/TWIST2/.venv/bin/activate
-
+# Activate venv if not already activated
 script_dir=$(dirname $(realpath $0))
+if [ -f "${script_dir}/.venv/bin/activate" ]; then
+    source "${script_dir}/.venv/bin/activate"
+fi
+
 motion_file="${script_dir}/assets/example_motions/sk_walk_030.pkl"
 # motion_file="${script_dir}/assets/example_motions/demo-003-g1.pkl"
 
