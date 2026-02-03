@@ -65,6 +65,7 @@ class RealTimePolicyController:
                  measure_fps=False,
                  limit_fps=True,
                  policy_frequency=50,
+                 config_file=None,
                  ):
         self.measure_fps = measure_fps
         self.limit_fps = limit_fps
@@ -100,57 +101,69 @@ class RealTimePolicyController:
 
         self.last_action = np.zeros(self.num_actions, dtype=np.float32)
 
-        # G1 specific configuration
-        self.default_dof_pos = np.array([
-                -0.2, 0.0, 0.0, 0.4, -0.2, 0.0,  # left leg (6)
-                -0.2, 0.0, 0.0, 0.4, -0.2, 0.0,  # right leg (6)
-                0.0, 0.0, 0.0, # torso (3)
-                0.0, 0.4, 0.0, 1.2, 0.0, 0.0, 0.0, # left arm (7)
-                0.0, -0.4, 0.0, 1.2, 0.0, 0.0, 0.0, # right arm (7)
-            ])
-
-        self.mujoco_default_dof_pos = np.concatenate([
-            np.array([0, 0, 0.793]),
-            np.array([1, 0, 0, 0]),
-             np.array([-0.2, 0.0, 0.0, 0.4, -0.2, 0.0,  # left leg (6)
-                -0.2, 0.0, 0.0, 0.4, -0.2, 0.0,  # right leg (6)
-                0.0, 0.0, 0.0, # torso (3)
-                0.0, 0.2, 0.0, 1.2, 0.0, 0.0, 0.0, # left arm (7)
-                0.0, -0.2, 0.0, 1.2, 0.0, 0.0, 0.0, # right arm (7)
+        # Load configuration from file if provided, otherwise use defaults
+        if config_file and os.path.exists(config_file):
+            from robot_control.config import Config
+            self.config = Config(config_file)
+            print(f"Loaded config from: {config_file}")
+            
+            # Use config values
+            self.default_dof_pos = self.config.default_angles.copy()
+            self.stiffness = np.array(self.config.kps, dtype=np.float32)
+            self.damping = np.array(self.config.kds, dtype=np.float32)
+            
+            # Action scaling from config
+            if self.config.action_scale_per_joint is not None:
+                # Per-joint scaling: action_final = action × action_scale_per_joint[joint] × action_rescale
+                self.action_scale = self.config.action_scale_per_joint * self.config.action_rescale
+            else:
+                # Uniform scaling
+                self.action_scale = np.full(self.num_actions, self.config.action_scale, dtype=np.float32)
+            
+            print(f"Using config: action_scale={self.config.action_scale}, action_rescale={self.config.action_rescale}")
+            if self.config.action_scale_per_joint is not None:
+                print(f"Using per-joint action scaling ({len(self.config.action_scale_per_joint)} joints)")
+        else:
+            # Default G1 configuration (fallback)
+            print("Using default G1 configuration (no config file provided)")
+            self.default_dof_pos = np.array([
+                    -0.2, 0.0, 0.0, 0.4, -0.2, 0.0,  # left leg (6)
+                    -0.2, 0.0, 0.0, 0.4, -0.2, 0.0,  # right leg (6)
+                    0.0, 0.0, 0.0, # torso (3)
+                    0.0, 0.4, 0.0, 1.2, 0.0, 0.0, 0.0, # left arm (7)
+                    0.0, -0.4, 0.0, 1.2, 0.0, 0.0, 0.0, # right arm (7)
                 ])
+            self.stiffness = np.array([
+                    100, 100, 100, 150, 40, 40,
+                    100, 100, 100, 150, 40, 40,
+                    150, 150, 150,
+                    40, 40, 40, 40, 4.0, 4.0, 4.0,
+                    40, 40, 40, 40, 4.0, 4.0, 4.0,
+                ])
+            self.damping = np.array([
+                    2, 2, 2, 4, 2, 2,
+                    2, 2, 2, 4, 2, 2,
+                    4, 4, 4,
+                    5, 5, 5, 5, 0.2, 0.2, 0.2,
+                    5, 5, 5, 5, 0.2, 0.2, 0.2,
+                ])
+            self.action_scale = np.array([
+                    0.5, 0.5, 0.5, 0.5, 0.5, 0.5,
+                    0.5, 0.5, 0.5, 0.5, 0.5, 0.5,
+                    0.5, 0.5, 0.5,
+                    0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5,
+                    0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5,
+                ])
+
+        # MuJoCo default pose: [root_pos(3), root_quat(4), dof_pos(29)]
+        # Use default_dof_pos which is already set from config or defaults
+        self.mujoco_default_dof_pos = np.concatenate([
+            np.array([0, 0, 0.793]),  # root position
+            np.array([1, 0, 0, 0]),   # root quaternion
+            self.default_dof_pos.copy()  # joint positions (29 DOFs)
         ])
 
-        self.stiffness = np.array([
-                100, 100, 100, 150, 40, 40,
-                100, 100, 100, 150, 40, 40,
-                150, 150, 150,
-                40, 40, 40, 40, 4.0, 4.0, 4.0,
-                40, 40, 40, 40, 4.0, 4.0, 4.0,
-            ])
-        self.damping = np.array([
-                2, 2, 2, 4, 2, 2,
-                2, 2, 2, 4, 2, 2,
-                4, 4, 4,
-                5, 5, 5, 5, 0.2, 0.2, 0.2,
-                5, 5, 5, 5, 0.2, 0.2, 0.2,
-            ])
-
-        
-        self.torque_limits = np.array([
-                100, 100, 100, 150, 40, 40,
-                100, 100, 100, 150, 40, 40,
-                150, 150, 150,
-                40, 40, 40, 40, 4.0, 4.0, 4.0,
-                40, 40, 40, 40, 4.0, 4.0, 4.0,
-            ])
-
-        self.action_scale = np.array([
-                0.5, 0.5, 0.5, 0.5, 0.5, 0.5,
-                0.5, 0.5, 0.5, 0.5, 0.5, 0.5,
-                0.5, 0.5, 0.5,
-                0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5,
-                0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5,
-            ])
+        self.torque_limits = self.stiffness.copy()  # Use stiffness as torque limits
 
         self.ankle_idx = [4, 5, 10, 11]
 
@@ -336,7 +349,13 @@ class RealTimePolicyController:
                     
                     self.last_action = raw_action
                     raw_action = np.clip(raw_action, -10., 10.)
-                    scaled_actions = raw_action * self.action_scale
+                    # Apply per-joint action scaling if configured
+                    if len(self.action_scale.shape) == 1 and self.action_scale.shape[0] == self.num_actions:
+                        # Per-joint scaling
+                        scaled_actions = raw_action * self.action_scale
+                    else:
+                        # Uniform scaling (fallback)
+                        scaled_actions = raw_action * self.action_scale[0] if len(self.action_scale) > 0 else raw_action * 0.5
                     pd_target = scaled_actions + self.default_dof_pos
 
                     # self.redis_client.set("action_low_level_unitree_g1", json.dumps(raw_action.tolist()))
@@ -414,6 +433,8 @@ def main():
     parser.add_argument("--measure_fps", help="Measure FPS", default=0, type=int)
     parser.add_argument("--limit_fps", help="Limit FPS with sleep", default=1, type=int)
     parser.add_argument("--policy_frequency", help="Policy frequency", default=100, type=int)
+    parser.add_argument("--config", type=str, default=None,
+                        help='Path to robot configuration YAML file (e.g., robot_control/configs/g1_bfm_zero.yaml)')
     args = parser.parse_args()
     
     # Verify policy file exists
@@ -429,6 +450,7 @@ def main():
     print(f"Starting TWIST2 simulation controller...")
     print(f"  XML file: {args.xml}")
     print(f"  Policy file: {args.policy}")
+    print(f"  Config file: {args.config if args.config else 'None (using defaults)'}")
     print(f"  Device: {args.device}")
     print(f"  Record video: {args.record_video}")
     print(f"  Record proprio: {args.record_proprio}")
@@ -443,6 +465,7 @@ def main():
         measure_fps=args.measure_fps,
         limit_fps=args.limit_fps,
         policy_frequency=args.policy_frequency,
+        config_file=args.config,
     )
     controller.run()
 

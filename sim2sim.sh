@@ -1,5 +1,5 @@
 SCRIPT_DIR=$(dirname $(realpath $0))
-ckpt_path=${SCRIPT_DIR}/assets/ckpts/eastworld_sk_20000.onnx
+ckpt_path=${SCRIPT_DIR}/assets/ckpts/ew_kpkd_10k.onnx
 # ckpt_path=${SCRIPT_DIR}/assets/ckpts/twist2_1017_20k.onnx
 
 cd deploy_real
@@ -11,4 +11,5 @@ python server_low_level_g1_sim.py \
     --measure_fps 1 \
     --policy_frequency 100 \
     --limit_fps 1 \
+    --config robot_control/configs/g1_bfm_zero.yaml
     # --record_proprio \

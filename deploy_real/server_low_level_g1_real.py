@@ -269,7 +269,14 @@ class RealTimePolicyController(object):
                 self.last_action = raw_action.copy()
 
                 raw_action = np.clip(raw_action, -10.0, 10.0)
-                target_dof_pos = self.default_dof_pos + raw_action * self.action_scale
+                # Apply per-joint action scaling if configured (BFM-Zero), otherwise use uniform scaling
+                if self.config.action_scale_per_joint is not None:
+                    # Per-joint scaling: action_final = action × action_scale_per_joint[joint] × action_rescale
+                    action_scaled = raw_action * self.config.action_scale_per_joint * self.config.action_rescale
+                else:
+                    # Standard uniform scaling
+                    action_scaled = raw_action * self.action_scale
+                target_dof_pos = self.default_dof_pos + action_scaled
 
                 # self.redis_client.set("action_low_level_unitree_g1", json.dumps(raw_action.tolist()))
 

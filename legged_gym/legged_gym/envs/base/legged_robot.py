@@ -401,6 +401,29 @@ class LeggedRobot(BaseTask):
         else:
             for s in range(len(props)):
                 props[s].friction = 1.0
+        
+        # Randomize restitution (bounciness)
+        if hasattr(self.cfg.domain_rand, 'randomize_restitution') and self.cfg.domain_rand.randomize_restitution:
+            if env_id == 0:
+                restitution_range = self.cfg.domain_rand.restitution_range
+                num_buckets = 64
+                bucket_ids = torch.randint(0, num_buckets, (self.num_envs, 1))
+                restitution_buckets = torch_rand_float(restitution_range[0], restitution_range[1], (num_buckets, 1), device='cpu')
+                self.restitution_coeffs = restitution_buckets[bucket_ids]
+            for s in range(len(props)):
+                props[s].restitution = self.restitution_coeffs[env_id]
+        
+        # Randomize contact stiffness
+        if hasattr(self.cfg.domain_rand, 'randomize_contact_stiffness') and self.cfg.domain_rand.randomize_contact_stiffness:
+            stiffness_scale = np.random.uniform(
+                self.cfg.domain_rand.contact_stiffness_range[0],
+                self.cfg.domain_rand.contact_stiffness_range[1]
+            )
+            for s in range(len(props)):
+                # Note: Isaac Gym doesn't directly expose contact stiffness in shape props,
+                # but we can scale thickness which affects contact behavior
+                props[s].thickness *= stiffness_scale
+        
         return props
 
     def _process_dof_props(self, props, env_id):
@@ -431,6 +454,33 @@ class LeggedRobot(BaseTask):
                 self.dof_pos_limits[i, 1] = m + 0.5 * r * self.cfg.rewards.soft_dof_pos_limit
                 if hasattr(self.cfg.asset, "dof_armature") and self.cfg.asset.dof_armature:
                     props["armature"][i] = self.cfg.asset.dof_armature[i]
+        
+        # Randomize joint damping
+        if hasattr(self.cfg.domain_rand, 'randomize_joint_damping') and self.cfg.domain_rand.randomize_joint_damping:
+            damping_scale = np.random.uniform(
+                self.cfg.domain_rand.joint_damping_range[0],
+                self.cfg.domain_rand.joint_damping_range[1]
+            )
+            for i in range(len(props)):
+                props["damping"][i] *= damping_scale
+        
+        # Randomize joint armature
+        if hasattr(self.cfg.domain_rand, 'randomize_joint_armature') and self.cfg.domain_rand.randomize_joint_armature:
+            armature_scale = np.random.uniform(
+                self.cfg.domain_rand.joint_armature_range[0],
+                self.cfg.domain_rand.joint_armature_range[1]
+            )
+            for i in range(len(props)):
+                props["armature"][i] *= armature_scale
+        
+        # Randomize joint friction
+        if hasattr(self.cfg.domain_rand, 'randomize_joint_friction') and self.cfg.domain_rand.randomize_joint_friction:
+            friction_add = np.random.uniform(
+                self.cfg.domain_rand.joint_friction_range[0],
+                self.cfg.domain_rand.joint_friction_range[1]
+            )
+            for i in range(len(props)):
+                props["friction"][i] += friction_add
                    
         return props
 
@@ -448,6 +498,31 @@ class LeggedRobot(BaseTask):
             props[self.torso_idx].com += gymapi.Vec3(*rand_com)
         else:
             rand_com = np.zeros(3)
+        
+        # Randomize joint body masses (all bodies except torso/base)
+        if hasattr(self.cfg.domain_rand, 'randomize_joint_mass') and self.cfg.domain_rand.randomize_joint_mass:
+            joint_mass_scale = np.random.uniform(
+                self.cfg.domain_rand.joint_mass_range[0],
+                self.cfg.domain_rand.joint_mass_range[1]
+            )
+            # Apply mass scaling to all bodies except the torso
+            for i in range(len(props)):
+                if i != self.torso_idx:
+                    props[i].mass *= joint_mass_scale
+        
+        # Randomize body inertia (moment of inertia)
+        if hasattr(self.cfg.domain_rand, 'randomize_body_inertia') and self.cfg.domain_rand.randomize_body_inertia:
+            inertia_scale = np.random.uniform(
+                self.cfg.domain_rand.inertia_scale_range[0],
+                self.cfg.domain_rand.inertia_scale_range[1]
+            )
+            for i in range(len(props)):
+                # Scale inertia tensor diagonal elements directly
+                # Note: In Isaac Gym, inertia is stored as a diagonal matrix
+                props[i].inertia.x.x *= inertia_scale
+                props[i].inertia.y.y *= inertia_scale
+                props[i].inertia.z.z *= inertia_scale
+        
         mass_params = np.concatenate([rand_mass, rand_com])
         return props, mass_params
     
@@ -496,17 +571,31 @@ class LeggedRobot(BaseTask):
             [torch.Tensor]: Torques sent to the simulation
         """
         #pd controller
-        actions_scaled = actions * self.cfg.control.action_scale
+        # Apply per-joint action scaling if configured (BFM-Zero), otherwise use uniform scaling
+        if hasattr(self, 'action_scale_per_joint') and self.action_scale_per_joint is not None:
+            # Per-joint scaling: action_final = action × action_scale_per_joint[joint] × action_rescale
+            actions_scaled = actions * self.action_scale_per_joint.unsqueeze(0) * self.action_rescale
+        else:
+            # Standard uniform scaling
+            actions_scaled = actions * self.cfg.control.action_scale
+        
         # actions_scaled[:, 11:] = 0.0
         control_type = self.cfg.control.control_type
         if control_type=="P":
+            # Use per-environment PD gains if randomized, otherwise use base gains
+            p_gains_use = self.p_gains_env if self.p_gains_env is not None else self.p_gains.unsqueeze(0).expand(self.num_envs, -1)
+            d_gains_use = self.d_gains_env if self.d_gains_env is not None else self.d_gains.unsqueeze(0).expand(self.num_envs, -1)
+            
             if not self.cfg.domain_rand.randomize_motor:  # TODO add strength to gain directly
-                torques = self.p_gains*(actions_scaled + self.default_dof_pos_all - self.dof_pos) - self.d_gains*self.dof_vel
+                torques = p_gains_use*(actions_scaled + self.default_dof_pos_all - self.dof_pos) - d_gains_use*self.dof_vel
             else:
-                torques = self.motor_strength[0] * self.p_gains*(actions_scaled + self.default_dof_pos_all - self.dof_pos) - self.motor_strength[1] * self.d_gains*self.dof_vel
+                torques = self.motor_strength[0] * p_gains_use*(actions_scaled + self.default_dof_pos_all - self.dof_pos) - self.motor_strength[1] * d_gains_use*self.dof_vel
                 
         elif control_type=="V":
-            torques = self.p_gains*(actions_scaled - self.dof_vel) - self.d_gains*(self.dof_vel - self.last_dof_vel)/self.sim_params.dt
+            # Use per-environment PD gains if randomized, otherwise use base gains
+            p_gains_use = self.p_gains_env if self.p_gains_env is not None else self.p_gains.unsqueeze(0).expand(self.num_envs, -1)
+            d_gains_use = self.d_gains_env if self.d_gains_env is not None else self.d_gains.unsqueeze(0).expand(self.num_envs, -1)
+            torques = p_gains_use*(actions_scaled - self.dof_vel) - d_gains_use*(self.dof_vel - self.last_dof_vel)/self.sim_params.dt
         elif control_type=="T":
             torques = actions_scaled
         else:
@@ -657,6 +746,9 @@ class LeggedRobot(BaseTask):
         self.forces = torch.zeros(self.num_envs, self.num_bodies, 3, dtype=torch.float, device=self.device, requires_grad=False)
         self.p_gains = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
         self.d_gains = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
+        # Per-environment PD gains for randomization (if enabled)
+        self.p_gains_env = None
+        self.d_gains_env = None
         self.actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
         self.last_actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
         self.last_dof_vel = torch.zeros_like(self.dof_vel)
@@ -665,6 +757,50 @@ class LeggedRobot(BaseTask):
 
         str_rng = self.cfg.domain_rand.motor_strength_range
         self.motor_strength = (str_rng[1] - str_rng[0]) * torch.rand(2, self.num_envs, self.num_dof, dtype=torch.float, device=self.device, requires_grad=False) + str_rng[0]
+        
+        # Print domain randomization status
+        if self.cfg.domain_rand.domain_rand_general:
+            print("\n" + "="*60)
+            print("DOMAIN RANDOMIZATION STATUS:")
+            print("="*60)
+            print(f"✓ Domain randomization: ENABLED")
+            print(f"  - Gravity randomization: {self.cfg.domain_rand.randomize_gravity}")
+            print(f"  - Friction randomization: {self.cfg.domain_rand.randomize_friction} (range: {self.cfg.domain_rand.friction_range})")
+            print(f"  - Base mass randomization: {self.cfg.domain_rand.randomize_base_mass} (range: {self.cfg.domain_rand.added_mass_range})")
+            print(f"  - Base COM randomization: {self.cfg.domain_rand.randomize_base_com} (range: {self.cfg.domain_rand.added_com_range})")
+            print(f"  - Motor strength randomization: {self.cfg.domain_rand.randomize_motor} (range: {str_rng})")
+            if hasattr(self.cfg.domain_rand, 'randomize_joint_mass'):
+                print(f"  - Joint mass randomization: {self.cfg.domain_rand.randomize_joint_mass} (range: {self.cfg.domain_rand.joint_mass_range})")
+            if hasattr(self.cfg.domain_rand, 'randomize_joint_damping'):
+                print(f"  - Joint damping randomization: {self.cfg.domain_rand.randomize_joint_damping} (range: {self.cfg.domain_rand.joint_damping_range})")
+            if hasattr(self.cfg.domain_rand, 'randomize_joint_armature'):
+                print(f"  - Joint armature randomization: {self.cfg.domain_rand.randomize_joint_armature} (range: {self.cfg.domain_rand.joint_armature_range})")
+            if hasattr(self.cfg.domain_rand, 'randomize_joint_friction'):
+                print(f"  - Joint friction randomization: {self.cfg.domain_rand.randomize_joint_friction} (range: {self.cfg.domain_rand.joint_friction_range})")
+            if hasattr(self.cfg.domain_rand, 'randomize_pd_gains'):
+                print(f"  - PD gains randomization: {self.cfg.domain_rand.randomize_pd_gains}")
+                print(f"    * Stiffness range: {self.cfg.domain_rand.stiffness_range}")
+                print(f"    * Damping range: {self.cfg.domain_rand.damping_gain_range}")
+            if hasattr(self.cfg.domain_rand, 'randomize_body_inertia'):
+                print(f"  - Body inertia randomization: {self.cfg.domain_rand.randomize_body_inertia} (range: {self.cfg.domain_rand.inertia_scale_range})")
+            if hasattr(self.cfg.domain_rand, 'randomize_restitution'):
+                print(f"  - Restitution randomization: {self.cfg.domain_rand.randomize_restitution} (range: {self.cfg.domain_rand.restitution_range})")
+            if hasattr(self.cfg.domain_rand, 'randomize_contact_stiffness'):
+                print(f"  - Contact stiffness randomization: {self.cfg.domain_rand.randomize_contact_stiffness} (range: {self.cfg.domain_rand.contact_stiffness_range})")
+            
+            # Print sample values to verify randomization
+            if self.cfg.domain_rand.randomize_friction:
+                print(f"\n  Sample friction values (first 5 envs): {self.friction_coeffs[:5].cpu().numpy().flatten()}")
+            if self.cfg.domain_rand.randomize_motor:
+                print(f"  Sample motor strength (env 0, first 3 joints): P={self.motor_strength[0, 0, :3].cpu().numpy()}, D={self.motor_strength[1, 0, :3].cpu().numpy()}")
+            if hasattr(self, 'p_gains_env') and self.p_gains_env is not None:
+                print(f"  Sample PD gains (env 0, first 3 joints): Kp={self.p_gains_env[0, :3].cpu().numpy()}, Kd={self.d_gains_env[0, :3].cpu().numpy()}")
+            print("="*60 + "\n")
+        else:
+            print("\n" + "="*60)
+            print("⚠ WARNING: Domain randomization is DISABLED")
+            print("="*60 + "\n")
+        
         if self.cfg.env.history_encoding:
             self.obs_history_buf = torch.zeros(self.num_envs, self.cfg.env.history_len, self.cfg.env.n_proprio, device=self.device, dtype=torch.float)
         self.action_history_buf = torch.zeros(self.num_envs, self.cfg.domain_rand.action_buf_len, self.num_actions, device=self.device, dtype=torch.float)
@@ -712,6 +848,39 @@ class LeggedRobot(BaseTask):
         self.default_dof_pos = self.default_dof_pos.unsqueeze(0)
 
         self.default_dof_pos_all[:] = self.default_dof_pos[0]
+
+        # Randomize PD gains per environment if enabled
+        if hasattr(self.cfg.domain_rand, 'randomize_pd_gains') and self.cfg.domain_rand.randomize_pd_gains:
+            stiffness_rng = self.cfg.domain_rand.stiffness_range
+            damping_rng = self.cfg.domain_rand.damping_gain_range
+            # Create per-environment PD gains: (num_envs, num_dof)
+            p_gains_base = self.p_gains.unsqueeze(0).expand(self.num_envs, -1)  # (num_envs, num_dof)
+            d_gains_base = self.d_gains.unsqueeze(0).expand(self.num_envs, -1)  # (num_envs, num_dof)
+            # Randomize with per-environment scaling
+            p_scale = (stiffness_rng[1] - stiffness_rng[0]) * torch.rand(self.num_envs, 1, device=self.device) + stiffness_rng[0]
+            d_scale = (damping_rng[1] - damping_rng[0]) * torch.rand(self.num_envs, 1, device=self.device) + damping_rng[0]
+            self.p_gains_env = p_gains_base * p_scale
+            self.d_gains_env = d_gains_base * d_scale
+        else:
+            self.p_gains_env = None
+            self.d_gains_env = None
+        
+        # Initialize per-joint action scaling if configured (for BFM-Zero)
+        if hasattr(self.cfg.control, 'action_scale_per_joint') and self.cfg.control.action_scale_per_joint is not None:
+            if len(self.cfg.control.action_scale_per_joint) == self.num_actions:
+                self.action_scale_per_joint = torch.tensor(
+                    self.cfg.control.action_scale_per_joint, 
+                    dtype=torch.float, 
+                    device=self.device
+                )
+            else:
+                print(f"Warning: action_scale_per_joint length ({len(self.cfg.control.action_scale_per_joint)}) doesn't match num_actions ({self.num_actions}). Using uniform scaling.")
+                self.action_scale_per_joint = None
+        else:
+            self.action_scale_per_joint = None
+        
+        # Initialize action_rescale if configured (for BFM-Zero)
+        self.action_rescale = getattr(self.cfg.control, 'action_rescale', 1.0)
 
         self.height_update_interval = 1
         if hasattr(self.cfg.env, "height_update_dt"):

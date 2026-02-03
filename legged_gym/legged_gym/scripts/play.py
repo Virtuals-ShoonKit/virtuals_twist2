@@ -150,9 +150,15 @@ def play(args):
         dict_name = os.path.join(path, dict_name)
         
     
-    if not (args.record_video or args.record_log):
+    if args.max_steps is not None:
+        # User specified max steps
+        traj_length = args.max_steps
+        print(f"Using user-specified max_steps: {traj_length}")
+    elif not (args.record_video or args.record_log):
+        # Default: run for 100 episodes if not recording
         traj_length = 100*int(env.max_episode_length)
     else:
+        # When recording: run for 1 episode
         traj_length = 1 * int(env.max_episode_length)
     
     # traj_length = 2000

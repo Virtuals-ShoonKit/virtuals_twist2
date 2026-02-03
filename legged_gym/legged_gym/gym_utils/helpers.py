@@ -309,6 +309,7 @@ def get_args():
         {"name": "--teacher_checkpoint", "type": int, "help": "teacher checkpoint", "default": -1},
         {"name": "--eval_student", "action": "store_true", "default": False, "help": "eval student"},
         {"name": "--jit_path", "type": str, "help": "jit path", "default": None},
+        {"name": "--max_steps", "type": int, "help": "maximum number of steps to run (overrides default)", "default": None},
     ]
     # parse arguments
     args = parse_arguments(

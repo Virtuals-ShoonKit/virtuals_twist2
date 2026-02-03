@@ -2,32 +2,34 @@
 
 ## 1. Create Virtual Environments
 ```bash
-cd /home/robo/Desktop/VP/virtuals_twist2
+cd /home/robo/Desktop/EW/virtuals_twist2
 bash setup_uv.sh
 ```
 
 ## 2. Install TWIST2 Packages (Python 3.8)
 ```bash
-cd /home/robo/Desktop/VP/virtuals_twist2
+cd /home/robo/Desktop/EW/virtuals_twist2
 source .venv/bin/activate
 
-# Install IsaacGym
-cd IsaacGym/isaacgym/python
-uv pip install -e .
-
 # Install TWIST2 and dependencies
-cd /home/robo/Desktop/VP/virtuals_twist2
+cd /home/robo/Desktop/EW/virtuals_twist2
 uv sync
 
 # Install local packages
 uv pip install -e ./pose
-uv pip install -e ./legged_gym
 uv pip install -e ./rsl_rl
+uv pip install -e ./legged_gym
 ```
 
-## 3. Install GMR (Python 3.10) - for motion retargeting
+## 3. Install IsaacGym
 ```bash
-cd /home/robo/Desktop/VP/virtuals_twist2/GMR
+cd /home/robo/Desktop/EW/virtuals_twist2/IsaacGym/isaacgym/python
+uv pip install -e .
+```
+
+## 4. Install GMR (Python 3.10) - for motion retargeting
+```bash
+cd /home/robo/Desktop/EW/virtuals_twist2/GMR
 source .venv/bin/activate
 uv pip install -e .
 ```
@@ -41,14 +43,14 @@ Generate `virtuals_dataset.yaml` with custom weights:
 - `assets/TWIST2_full/*` → weight **1.0**
 
 ```bash
-cd /home/robo/Desktop/VP/virtuals_twist2
+cd /home/robo/Desktop/EW/virtuals_twist2
 source .venv/bin/activate
 python generate_dataset_yaml.py
 ```
 
 Custom weights example:
 ```bash
-python generate_dataset_yaml.py --virtuals_weight 20.0 --twist2_weight 0.5
+python generate_dataset_yaml.py --virtuals_weight 10.0 --twist2_weight 1.0
 ```
 
 ---
@@ -57,7 +59,7 @@ python generate_dataset_yaml.py --virtuals_weight 20.0 --twist2_weight 0.5
 
 ## Train Teacher (Motion Imitation)
 ```bash
-cd /home/robo/Desktop/VP/virtuals_twist2
+cd /home/robo/Desktop/EW/virtuals_twist2
 source .venv/bin/activate
 
 cd legged_gym/legged_gym/scripts
@@ -69,19 +71,25 @@ python train.py --task g1_mimic \
 
 ## Train Privileged Policy
 ```bash
-cd /home/robo/Desktop/VP/virtuals_twist2
+cd /home/robo/Desktop/EW/virtuals_twist2
 source .venv/bin/activate
 
 cd legged_gym/legged_gym/scripts
 python train.py --task g1_priv_mimic \
                 --proj_name g1_priv_mimic \
-                --exptid virtuals_priv_001 \
+                --exptid ew_teacher_domran_001 \
+                --device cuda:0 \
+                --num_envs 2048
+
+python train.py --task g1_priv_mimic_bfm_zero \
+                --proj_name g1_priv_mimic_bfm_zero \
+                --exptid teacher_kpkd_001 \
                 --device cuda:0
 ```
 
 ## Train Student Policy (after teacher is trained)
 ```bash
-cd /home/robo/Desktop/VP/virtuals_twist2
+cd /home/robo/Desktop/EW/virtuals_twist2
 source .venv/bin/activate
 
 # Using the train.sh script
@@ -94,20 +102,65 @@ python train.py --task g1_stu_future \
                 --proj_name g1_stu_future \
                 --exptid virtuals_stu_001 \
                 --device cuda:0
+
+python train.py --task g1_stu_future_bfm_zero \
+                --proj_name g1_stu_future_bfm_zero \
+                --exptid student_bfm_zero_001 \
+                --device cuda:0 \
+                --teacher_exptid teacher_kpkd_001 \
+                --teacher_checkpoint -1 \
+                --num_envs 2048
 ```
 
+# play
+
+```bash
+cd legged_gym/legged_gym/scripts
+python play.py --task g1_priv_mimic_bfm_zero \
+               --proj_name g1_priv_mimic_bfm_zero \
+               --exptid teacher_kpkd_002 \
+               --device cuda:0 \
+               --checkpoint -1 \
+               --env.motion.motion_file /home/robo/Desktop/EW/virtuals_twist2/assets/example_motions/sk_walk_050.pkl \
+               --num_envs 1 \
+               --record_video
+
+python play.py --task g1_stu_future_bfm_zero \
+               --proj_name g1_stu_future_bfm_zero \
+               --exptid stu_kpkd_001 \
+               --device cuda:0 \
+               --checkpoint -1 \
+               --env.motion.motion_file /home/robo/Desktop/EW/virtuals_twist2/assets/example_motions/sk_walk_050.pkl \
+               --num_envs 1 \
+               --eval_student \
+               --record_video
+```
+
+# Export ,oonx
+```bash
+./to_onnx.sh /home/robo/Desktop/EW/virtuals_twist2/assets/ckpts/ew_kpkd_10k.pt
+```
+
+# Test
+```bash
+# Terminal 1:
+./run_motion_server.sh
+
+# Terminal 2:
+./run_sim2sim.sh
+```
 ---
 
 # Start Recording Session
 ```bash
-cd /home/robo/Desktop/VP/virtuals_twist2
+cd /home/robo/Desktop/EW/virtuals_twist2
 source GMR/.venv/bin/activate
 bash record_motion.sh
 ```
 
 # Playback
 ```bash
-cd /home/robo/Desktop/VP/virtuals_twist2/GMR
+cd /home/robo/Desktop/EW/virtuals_twist2/GMR
 source .venv/bin/activate
 
 python scripts/vis_robot_motion.py \

@@ -146,7 +146,8 @@ class G1MimicPrivCfg(HumanoidMimicCfg):
     class asset(HumanoidMimicCfg.asset):
         # file = f'{LEGGED_GYM_ROOT_DIR}/../assets/g1/g1_custom_collision.urdf'
         # file = f'{LEGGED_GYM_ROOT_DIR}/../assets/g1/g1_custom_collision_with_fixed_hand.urdf'
-        file = f'{LEGGED_GYM_ROOT_DIR}/../assets/g1/g1_custom_collision_29dof.urdf'
+        # file = f'{LEGGED_GYM_ROOT_DIR}/../assets/g1/g1_custom_collision_29dof.urdf'
+        file = f'{LEGGED_GYM_ROOT_DIR}/../assets/g1_new/g1_custom_collision_29dof.urdf'
         
         # for both joint and link name
         torso_name: str = 'pelvis'  # humanoid pelvis part
@@ -297,6 +298,35 @@ class G1MimicPrivCfg(HumanoidMimicCfg):
         
         randomize_base_com = (True and domain_rand_general)
         added_com_range = [-0.05, 0.05]
+        
+        # randomize_joint_mass = (True and domain_rand_general)  # Randomize mass of joint bodies (legs, arms, etc.)
+        # joint_mass_range = [0.9, 1.1] 
+        
+        # # Joint dynamics randomization
+        # randomize_joint_damping = (True and domain_rand_general)
+        # joint_damping_range = [0.5, 1.5]  # Scale factor for joint damping
+        
+        # randomize_joint_armature = (True and domain_rand_general)
+        # joint_armature_range = [0.8, 1.2]  # Scale factor for joint armature (inertia)
+        
+        # randomize_joint_friction = (True and domain_rand_general)
+        # joint_friction_range = [0.0, 0.1]  # Additive friction coefficient
+        
+        # # PD gains randomization
+        # randomize_pd_gains = (True and domain_rand_general)
+        # stiffness_range = [0.8, 1.2]  # Scale factor for stiffness (kp)
+        # damping_gain_range = [0.8, 1.2]  # Scale factor for damping (kd)
+        
+        # # Inertia randomization
+        # randomize_body_inertia = (True and domain_rand_general)
+        # inertia_scale_range = [0.8, 1.2]  # Scale factor for moment of inertia
+        
+        # # Contact properties randomization
+        # randomize_restitution = (True and domain_rand_general)
+        # restitution_range = [0.0, 0.3]  # Bounciness (0 = no bounce, 1 = full bounce)
+        
+        # randomize_contact_stiffness = (True and domain_rand_general)
+        # contact_stiffness_range = [0.8, 1.2]  # Contact model stiffness scale
         
         push_robots = (True and domain_rand_general)
         push_interval_s = 4

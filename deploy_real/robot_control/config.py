@@ -29,6 +29,8 @@ class Config:
             self.dof_pos_scale = config["dof_pos_scale"] if "dof_pos_scale" in config else None
             self.dof_vel_scale = config["dof_vel_scale"] if "dof_vel_scale" in config else None
             self.action_scale = config["action_scale"] if "action_scale" in config else None
+            self.action_rescale = config["action_rescale"] if "action_rescale" in config else 1.0
+            self.action_scale_per_joint = np.array(config["action_scale_per_joint"], dtype=np.float32) if "action_scale_per_joint" in config else None
             self.cmd_scale = np.array(config["cmd_scale"], dtype=np.float32) if "cmd_scale" in config else None
             self.max_cmd = np.array(config["max_cmd"], dtype=np.float32) if "max_cmd" in config else None
 
